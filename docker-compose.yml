@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mihogar-db
+    environment:
+      POSTGRES_DB: mihogar
+      POSTGRES_USER: mihogar_admin
+      POSTGRES_PASSWORD: mihogar_local_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./server/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./server/db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mihogar_admin -d mihogar"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: mihogar-api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mihogar_admin:mihogar_local_2026@db:5432/mihogar
+      DATABASE_URL_SYNC: postgresql://mihogar_admin:mihogar_local_2026@db:5432/mihogar
+      JWT_SECRET: local-dev-secret-change-in-prod-2026
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_MINUTES: 480
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173"]'
+      ENV: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server/app:/code/app
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  mock-esp32:
+    build:
+      context: ./mock-esp32
+      dockerfile: Dockerfile
+    container_name: mihogar-mock-esp32
+    environment:
+      BACKEND_URL: http://server:8000
+      MOCK_CASA_ID: ${MOCK_CASA_ID}
+      CONFIG_POLL_SECONDS: 15
+      HEARTBEAT_SECONDS: 30
+      MOCK_SEND_TELEMETRY: "false"
+      TELEMETRY_SECONDS: 60
+      LOG_LEVEL: INFO
+      HTTP_TIMEOUT_SECONDS: 10
+    ports:
+      - "8080:8080"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  pgdata:

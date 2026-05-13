@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Mi Hogar - DynamoDB Tables
+
+Resources:
+  SensorEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: mihogar-sensor-events
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: casa_id
+          AttributeType: S
+        - AttributeName: "timestamp#zona_id"
+          AttributeType: S
+        - AttributeName: zona_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: casa_id
+          KeyType: HASH
+        - AttributeName: "timestamp#zona_id"
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: zona-time-index
+          KeySchema:
+            - AttributeName: zona_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: MiHogar
+
+  DeviceCommandsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: mihogar-device-commands
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: casa_id
+          AttributeType: S
+        - AttributeName: command_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: casa_id
+          KeyType: HASH
+        - AttributeName: command_id
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: MiHogar
+
+Outputs:
+  SensorEventsTableArn:
+    Value: !GetAtt SensorEventsTable.Arn
+  DeviceCommandsTableArn:
+    Value: !GetAtt DeviceCommandsTable.Arn

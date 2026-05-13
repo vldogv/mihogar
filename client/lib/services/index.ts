@@ -1,0 +1,5 @@
+export { panelService } from "./panel"
+export { horariosService } from "./horarios"
+export { consumoService } from "./consumo"
+export { dispositivosService } from "./dispositivos"
+export { usuariosService } from "./usuarios"
