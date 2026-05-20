@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import type { AuthSession, Casa, Rol, UserWithHouses } from "@/types/auth"
 import { api, setToken, getToken, removeToken } from "@/lib/api/client"
+import { clearSnapshot } from "@/lib/offline/db"
 
 interface LoginOwnerResponse {
   access_token: string
@@ -37,8 +38,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; houses: (Casa & { rol: Rol })[] }>
   selectHouse: (casaId: string, rol: Rol) => void
-  logout: () => void
-  changeHouse: () => void
+  logout: () => Promise<void>
+  changeHouse: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -185,20 +186,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user]
   )
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const casaId = session?.casa_id_activa
+    if (casaId) {
+      try {
+        await clearSnapshot(casaId)
+      } catch (err) {
+        console.error("[logout] clearSnapshot failed:", err)
+      }
+    }
     setSession(null)
     setUser(null)
     localStorage.removeItem(SESSION_KEY)
     localStorage.removeItem(USER_KEY)
     removeToken()
     window.location.href = "/login"
-  }, [])
+  }, [session])
 
-  const changeHouse = useCallback(() => {
+  const changeHouse = useCallback(async () => {
+    const casaId = session?.casa_id_activa
+    if (casaId) {
+      try {
+        await clearSnapshot(casaId)
+      } catch (err) {
+        console.error("[changeHouse] clearSnapshot failed:", err)
+      }
+    }
     setSession(null)
     localStorage.removeItem(SESSION_KEY)
     window.location.href = "/select-house"
-  }, [])
+  }, [session])
 
   const activeCasa = user?.casas.find((c) => c.id === session?.casa_id_activa) || null
 
