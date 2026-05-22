@@ -110,7 +110,7 @@ export function Dashboard() {
           </nav>
 
           <div className="px-4 pb-6">
-            <ConnectionStatus isOnline={isOnline} />
+            <ConnectionStatus />
           </div>
         </div>
       </aside>
@@ -167,6 +167,7 @@ export function Dashboard() {
             onAllOn={() => setZonesState((prev) => prev.map((z) => ({ ...z, isOn: true })))}
             onAllOff={() => setZonesState((prev) => prev.map((z) => ({ ...z, isOn: false })))}
             onAutoAll={() => setZonesState((prev) => prev.map((z) => ({ ...z, mode: "auto" as const })))}
+            isOnline={true}
           />
 
           {/* Zones Grid */}
@@ -179,6 +180,7 @@ export function Dashboard() {
                   zone={zone}
                   onToggle={() => handleToggleZone(zone.id)}
                   onModeChange={(mode) => handleModeChange(zone.id, mode)}
+                  isOnline={true}
                 />
               ))}
             </div>

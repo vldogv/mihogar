@@ -1,63 +1,55 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState } from "react"
 import { AppShell } from "@/components/app-shell"
 import { ZoneDetailCard } from "@/components/zone-detail-card"
 import { Slider } from "@/components/ui/slider"
 import { useAuth } from "@/lib/auth/auth-context"
-import { panelService, type PanelData } from "@/lib/services/panel"
+import { useConnectivity } from "@/hooks/use-connectivity"
+import { useSnapshot } from "@/lib/offline/snapshot-context"
+import { panelService } from "@/lib/services/panel"
+import { cn } from "@/lib/utils"
 
 export function ZonesView() {
   const { session } = useAuth()
-  const casaId = session?.casa_id_activa
-  const [panelData, setPanelData] = useState<PanelData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { snapshot, isHydrating, refresh } = useSnapshot()
+  const { isOnline } = useConnectivity()
   const [selectedZone, setSelectedZone] = useState<string | null>(null)
 
-  const fetchData = useCallback(async () => {
-    if (!casaId) return
-    try {
-      const data = await panelService.getPanel(casaId)
-      setPanelData(data)
-    } catch (err) {
-      console.error("Error loading zones:", err)
-    } finally {
-      setLoading(false)
-    }
-  }, [casaId])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
   const handleToggle = async (zonaId: string, currentState: boolean) => {
+    if (!isOnline) return
     try {
       await panelService.toggleZona(zonaId, !currentState)
-      await fetchData()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
   const handleModeChange = async (zonaId: string, mode: "auto" | "manual" | "timer") => {
+    if (!isOnline) return
     const modeMap: Record<string, string> = { auto: "automatico", manual: "manual", timer: "temporizador" }
     try {
       await panelService.cambiarModo(zonaId, modeMap[mode])
-      await fetchData()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
   const handleThresholdChange = async (zonaId: string, value: number) => {
+    if (!isOnline) return
     try {
       await panelService.updateConfigZona(zonaId, { umbral_oscuridad: value })
-      await fetchData()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
   const handleAutoOffChange = async (zonaId: string, seconds: number) => {
+    if (!isOnline) return
     try {
       await panelService.updateConfigZona(zonaId, { tiempo_apagado_auto: seconds })
-      await fetchData()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
-  if (loading) {
+  if (isHydrating && !snapshot) {
     return (
       <AppShell title="Control de Zonas" subtitle="Gestiona cada zona de tu hogar" currentPath="/zones">
         <div className="flex items-center justify-center py-20">
@@ -67,7 +59,7 @@ export function ZonesView() {
     )
   }
 
-  const allZones = (panelData?.zonas || []).map((z) => {
+  const allZones = (snapshot?.zonas || []).map((z) => {
     const modeMap: Record<string, "auto" | "manual" | "timer"> = {
       automatico: "auto", manual: "manual", temporizador: "timer",
     }
@@ -104,7 +96,8 @@ const zonasPermitidas = session?.zonas_permitidas
             onValueChange={([v]) => handleThresholdChange(selected.id, v)}
             max={100}
             step={5}
-            className="w-full"
+            disabled={!isOnline}
+            className={cn("w-full", !isOnline && "opacity-50 cursor-not-allowed")}
           />
           <p className="text-xs text-muted-foreground mt-2">
             La luz se enciende cuando el nivel de luz ambiente está por debajo de este valor.
@@ -128,7 +121,8 @@ const zonasPermitidas = session?.zonas_permitidas
           <select
             value={selected.autoOff}
             onChange={(e) => handleAutoOffChange(selected.id, Number(e.target.value))}
-            className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            disabled={!isOnline}
+            className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value={60}>1 minuto</option>
             <option value={180}>3 minutos</option>
@@ -151,6 +145,7 @@ const zonasPermitidas = session?.zonas_permitidas
               onSelect={() => setSelectedZone(selectedZone === zone.id ? null : zone.id)}
               onToggle={() => handleToggle(zone.id, zone.isOn)}
               onModeChange={(mode) => handleModeChange(zone.id, mode)}
+              isOnline={isOnline}
             />
             {selectedZone === zone.id && settingsPanel && <div className="mt-3">{settingsPanel}</div>}
           </div>

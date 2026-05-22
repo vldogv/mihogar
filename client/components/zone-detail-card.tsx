@@ -20,6 +20,7 @@ interface ZoneDetailCardProps {
   onSelect: () => void
   onToggle: () => void
   onModeChange: (mode: "auto" | "manual" | "timer") => void
+  isOnline: boolean
 }
 
 const modeLabels = {
@@ -28,7 +29,7 @@ const modeLabels = {
   timer: { label: "Temporizador", icon: Clock, color: "text-amber-600 bg-amber-50" },
 }
 
-export function ZoneDetailCard({ zone, isSelected, onSelect, onToggle, onModeChange }: ZoneDetailCardProps) {
+export function ZoneDetailCard({ zone, isSelected, onSelect, onToggle, onModeChange, isOnline }: ZoneDetailCardProps) {
   const modeInfo = modeLabels[zone.mode]
 
   return (
@@ -89,11 +90,13 @@ export function ZoneDetailCard({ zone, isSelected, onSelect, onToggle, onModeCha
                     e.stopPropagation()
                     onModeChange(mode)
                   }}
+                  disabled={!isOnline}
                   className={cn(
                     "px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-lg text-[10px] lg:text-xs font-medium transition-colors",
                     zone.mode === mode
                       ? "bg-primary text-primary-foreground"
                       : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                 >
                   {info.label}
@@ -110,6 +113,7 @@ export function ZoneDetailCard({ zone, isSelected, onSelect, onToggle, onModeCha
               onToggle()
             }}
             onClick={(e) => e.stopPropagation()}
+            disabled={!isOnline}
           />
           <ChevronRight className="h-5 w-5 text-muted-foreground hidden lg:block" />
         </div>

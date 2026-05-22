@@ -20,9 +20,10 @@ interface TimerCardProps {
   timer: Timer
   onToggle: () => void
   onDelete: () => void
+  isOnline: boolean
 }
 
-export function TimerCard({ timer, onToggle, onDelete }: TimerCardProps) {
+export function TimerCard({ timer, onToggle, onDelete, isOnline }: TimerCardProps) {
   const dayLabels: Record<string, string> = {
     L: "Lun",
     M: "Mar",
@@ -87,11 +88,12 @@ export function TimerCard({ timer, onToggle, onDelete }: TimerCardProps) {
         <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
           <button
             onClick={onDelete}
-            className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            disabled={!isOnline}
+            className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-muted-foreground disabled:hover:bg-transparent"
           >
             <Trash2 className="h-4 w-4" />
           </button>
-          <Switch checked={timer.isActive} onCheckedChange={onToggle} />
+          <Switch checked={timer.isActive} onCheckedChange={onToggle} disabled={!isOnline} />
         </div>
       </div>
     </div>

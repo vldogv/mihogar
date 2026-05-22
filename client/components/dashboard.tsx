@@ -1,56 +1,41 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
 import { Home, Lightbulb, Calendar, BarChart3, Settings, Users, Wifi, WifiOff, Sun, Moon } from "lucide-react"
 import { ZoneCard } from "@/components/zone-card"
 import { QuickActions } from "@/components/quick-actions"
 import { ConnectionStatus } from "@/components/connection-status"
 import { MobileNav } from "@/components/mobile-nav"
+import { OfflineBanner } from "@/components/offline-banner"
 import { useAuth } from "@/lib/auth/auth-context"
-import { panelService, type PanelData } from "@/lib/services/panel"
+import { useConnectivity } from "@/hooks/use-connectivity"
+import { useSnapshot } from "@/lib/offline/snapshot-context"
+import { panelService } from "@/lib/services/panel"
 import { cn } from "@/lib/utils"
 
 
 export function Dashboard() {
   const { session, activeCasa, isLoading: authLoading } = useAuth()
-  const [panelData, setPanelData] = useState<PanelData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [isOnline, setIsOnline] = useState(true)
+  const { snapshot, isHydrating, refresh } = useSnapshot()
+  const { isOnline } = useConnectivity()
 
   const casaId = session?.casa_id_activa
 
-  const fetchPanel = useCallback(async () => {
-    if (!casaId) return
-    try {
-      const data = await panelService.getPanel(casaId)
-      setPanelData(data)
-      setIsOnline(true)
-    } catch (err) {
-      console.error("Error loading panel:", err)
-      setIsOnline(false)
-    } finally {
-      setLoading(false)
-    }
-  }, [casaId])
-
-  useEffect(() => {
-    fetchPanel()
-  }, [fetchPanel])
-
   const handleToggleZone = async (zonaId: string, currentState: boolean) => {
+    if (!isOnline) return
     try {
       await panelService.toggleZona(zonaId, !currentState)
-      await fetchPanel()
+      await refresh()
     } catch (err) {
       console.error("Error toggling zone:", err)
     }
   }
 
   const handleModeChange = async (zonaId: string, mode: "auto" | "manual" | "timer") => {
+    if (!isOnline) return
     const modeMap: Record<string, string> = { auto: "automatico", manual: "manual", timer: "temporizador" }
     try {
       await panelService.cambiarModo(zonaId, modeMap[mode])
-      await fetchPanel()
+      await refresh()
     } catch (err) {
       console.error("Error changing mode:", err)
     }
@@ -58,21 +43,23 @@ export function Dashboard() {
 
   const handleAllOn = async () => {
     if (!casaId) return
+    if (!isOnline) return
     try {
       await panelService.encenderTodo(casaId)
-      await fetchPanel()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
   const handleAllOff = async () => {
     if (!casaId) return
+    if (!isOnline) return
     try {
       await panelService.apagarTodo(casaId)
-      await fetchPanel()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
-  if (authLoading || loading) {
+  if (authLoading || (isHydrating && !snapshot)) {
     return (
       <div className="min-h-screen bg-secondary/30 flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Cargando panel...</div>
@@ -80,7 +67,7 @@ export function Dashboard() {
     )
   }
 
- const allZones = (panelData?.zonas || []).map((z) => {
+ const allZones = (snapshot?.zonas || []).map((z) => {
     const modeMap: Record<string, "auto" | "manual" | "timer"> = {
       automatico: "auto", manual: "manual", temporizador: "timer",
     }
@@ -141,7 +128,7 @@ export function Dashboard() {
             ))}
           </nav>
           <div className="px-4 pb-6">
-            <ConnectionStatus isOnline={isOnline} />
+            <ConnectionStatus />
           </div>
         </div>
       </aside>
@@ -149,6 +136,7 @@ export function Dashboard() {
       {/* Main content */}
       <main className="flex-1 lg:pl-0">
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-lg border-b border-border">
+          <OfflineBanner />
           <div className="flex items-center justify-between px-4 py-3 lg:px-8 lg:py-4">
             <div>
               <h2 className="text-lg lg:text-xl font-semibold text-foreground">Panel de Control</h2>
@@ -171,7 +159,7 @@ export function Dashboard() {
         </header>
 
         <div className="px-3 sm:px-4 py-3 sm:py-4 pb-20 lg:px-8 lg:py-8 lg:pb-8 space-y-4 sm:space-y-6">
-          <QuickActions onAllOn={handleAllOn} onAllOff={handleAllOff} onAutoAll={handleAllOn} />
+          <QuickActions onAllOn={handleAllOn} onAllOff={handleAllOff} onAutoAll={handleAllOn} isOnline={isOnline} />
 
           <section>
             <h3 className="text-sm sm:text-base lg:text-lg font-semibold text-foreground mb-3 sm:mb-4">Zonas del Hogar</h3>
@@ -182,6 +170,7 @@ export function Dashboard() {
                   zone={zone}
                   onToggle={() => handleToggleZone(zone.id, zone.isOn)}
                   onModeChange={(mode) => handleModeChange(zone.id, mode)}
+                  isOnline={isOnline}
                 />
               ))}
             </div>

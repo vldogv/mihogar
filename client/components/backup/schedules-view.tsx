@@ -167,6 +167,7 @@ export function SchedulesView() {
                 timer={timer}
                 onToggle={() => handleToggleTimer(timer.id)}
                 onDelete={() => handleDeleteTimer(timer.id)}
+                isOnline={true}
               />
             ))}
           </div>

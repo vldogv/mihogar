@@ -1,13 +1,12 @@
 "use client"
 
-import { Wifi, WifiOff, CloudOff } from "lucide-react"
+import { Wifi, WifiOff } from "lucide-react"
+import { useConnectivity } from "@/hooks/use-connectivity"
 import { cn } from "@/lib/utils"
 
-interface ConnectionStatusProps {
-  isOnline: boolean
-}
+export function ConnectionStatus() {
+  const { isOnline } = useConnectivity()
 
-export function ConnectionStatus({ isOnline }: ConnectionStatusProps) {
   return (
     <div
       className={cn(
@@ -28,16 +27,11 @@ export function ConnectionStatus({ isOnline }: ConnectionStatusProps) {
           <p className={cn("font-medium text-sm", isOnline ? "text-emerald-700" : "text-amber-700")}>
             {isOnline ? "Conectado" : "Sin conexión"}
           </p>
-          <p className="text-xs text-muted-foreground">{isOnline ? "Sincronizado con la nube" : "Modo local activo"}</p>
+          <p className="text-xs text-muted-foreground">
+            {isOnline ? "Sincronizado con la nube" : "Mostrando datos guardados"}
+          </p>
         </div>
       </div>
-
-      {!isOnline && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-amber-600">
-          <CloudOff className="h-3.5 w-3.5" />
-          <span>Comandos en cola: 2 pendientes</span>
-        </div>
-      )}
     </div>
   )
 }

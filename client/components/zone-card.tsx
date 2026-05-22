@@ -19,6 +19,7 @@ interface ZoneCardProps {
   zone: Zone
   onToggle: () => void
   onModeChange: (mode: "auto" | "manual" | "timer") => void
+  isOnline: boolean
 }
 
 const modeLabels = {
@@ -27,7 +28,7 @@ const modeLabels = {
   timer: { label: "Temporizador", icon: Clock, color: "text-amber-600 bg-amber-50" },
 }
 
-export function ZoneCard({ zone, onToggle, onModeChange }: ZoneCardProps) {
+export function ZoneCard({ zone, onToggle, onModeChange, isOnline }: ZoneCardProps) {
   const [expanded, setExpanded] = useState(false)
   const modeInfo = modeLabels[zone.mode]
 
@@ -66,7 +67,7 @@ export function ZoneCard({ zone, onToggle, onModeChange }: ZoneCardProps) {
             </span>
           </div>
         </div>
-        <Switch checked={zone.isOn} onCheckedChange={onToggle} />
+        <Switch checked={zone.isOn} onCheckedChange={onToggle} disabled={!isOnline} />
       </div>
 
       {/* Sensors info */}
@@ -110,11 +111,13 @@ export function ZoneCard({ zone, onToggle, onModeChange }: ZoneCardProps) {
                 <button
                   key={mode}
                   onClick={() => onModeChange(mode)}
+                  disabled={!isOnline}
                   className={cn(
                     "flex flex-col items-center gap-0.5 sm:gap-1 p-2 sm:p-3 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-medium transition-colors min-h-[44px]",
                     zone.mode === mode
                       ? "bg-primary text-primary-foreground"
                       : "bg-secondary text-secondary-foreground hover:bg-secondary/80 active:bg-secondary/80",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                 >
                   <info.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />

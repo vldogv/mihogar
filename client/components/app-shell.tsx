@@ -5,7 +5,9 @@ import { useState, useEffect } from "react"
 import { Home, Lightbulb, Calendar, BarChart3, Settings, Users, Menu, X, Wifi, WifiOff, LogOut, RefreshCw } from "lucide-react"
 import { ConnectionStatus } from "@/components/connection-status"
 import { MobileNav } from "@/components/mobile-nav"
+import { OfflineBanner } from "@/components/offline-banner"
 import { useAuth } from "@/lib/auth/auth-context"
+import { useConnectivity } from "@/hooks/use-connectivity"
 import { cn } from "@/lib/utils"
 import { usePermissions } from "@/lib/hooks/use-permissions"
 
@@ -19,7 +21,7 @@ interface AppShellProps {
 export function AppShell({ children, title, subtitle, currentPath }: AppShellProps) {
   const { session, user, activeCasa, isLoading, logout, changeHouse } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [isOnline] = useState(true)
+  const { isOnline } = useConnectivity()
   const perms = usePermissions()
 
   const navigation = [
@@ -77,7 +79,7 @@ export function AppShell({ children, title, subtitle, currentPath }: AppShellPro
             ))}
           </nav>
           <div className="px-4 pb-6 space-y-3">
-            <ConnectionStatus isOnline={isOnline} />
+            <ConnectionStatus />
             {hasMultipleHouses && (
               <button onClick={changeHouse} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
                 <RefreshCw className="h-4 w-4" />
@@ -93,6 +95,7 @@ export function AppShell({ children, title, subtitle, currentPath }: AppShellPro
       </aside>
       <main className="flex-1 min-w-0 overflow-x-hidden lg:pl-0">
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-lg border-b border-border">
+          <OfflineBanner />
           <div className="flex items-center justify-between px-4 py-3 lg:px-8 lg:py-4">
             <div className="flex items-center gap-3 lg:gap-4">
               <button onClick={() => setSidebarOpen(true)} className="hidden lg:hidden p-2 rounded-lg hover:bg-secondary">

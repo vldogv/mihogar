@@ -1,13 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState } from "react"
 import { AppShell } from "@/components/app-shell"
 import { TimerCard } from "@/components/timer-card"
 import { NightModeSettings } from "@/components/night-mode-settings"
 import { Plus, Clock, Moon, Calendar } from "lucide-react"
 import { useAuth } from "@/lib/auth/auth-context"
-import { horariosService, type Temporizador } from "@/lib/services/horarios"
-import { panelService, type Zona } from "@/lib/services/panel"
+import { useConnectivity } from "@/hooks/use-connectivity"
+import { useSnapshot } from "@/lib/offline/snapshot-context"
+import { horariosService } from "@/lib/services/horarios"
+import type { SnapshotTemporizador } from "@/lib/offline/types"
 import { cn } from "@/lib/utils"
 
 const dayMap: Record<string, string> = {
@@ -17,7 +19,7 @@ const dayMapReverse: Record<string, string> = {
   L: "lunes", M: "martes", X: "miercoles", J: "jueves", V: "viernes", S: "sabado", D: "domingo",
 }
 
-function tempToDays(t: Temporizador): string[] {
+function tempToDays(t: SnapshotTemporizador): string[] {
   return Object.entries(t.dias)
     .filter(([, v]) => v)
     .map(([k]) => dayMap[k] || k)
@@ -26,9 +28,10 @@ function tempToDays(t: Temporizador): string[] {
 export function SchedulesView() {
   const { session } = useAuth()
   const casaId = session?.casa_id_activa
-  const [timers, setTimers] = useState<Temporizador[]>([])
-  const [zones, setZones] = useState<Zona[]>([])
-  const [loading, setLoading] = useState(true)
+  const { snapshot, isHydrating, refresh } = useSnapshot()
+  const { isOnline } = useConnectivity()
+  const timers = snapshot?.temporizadores ?? []
+  const zones = (snapshot?.zonas ?? []).map((z) => z.zona)
   const [activeTab, setActiveTab] = useState<"timers" | "night">("timers")
   const [showAddModal, setShowAddModal] = useState(false)
   const [newTimer, setNewTimer] = useState({
@@ -39,40 +42,25 @@ export function SchedulesView() {
     type: "fixed" as "fixed" | "sensor",
   })
 
-  const fetchData = useCallback(async () => {
-    if (!casaId) return
-    try {
-      const [t, z] = await Promise.all([
-        horariosService.getTemporizadores(casaId),
-        panelService.getZonas(casaId),
-      ])
-      setTimers(t)
-      setZones(z)
-    } catch (err) {
-      console.error("Error loading schedules:", err)
-    } finally {
-      setLoading(false)
-    }
-  }, [casaId])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
   const handleToggleTimer = async (timerId: string, current: boolean) => {
+    if (!isOnline) return
     try {
       await horariosService.updateTemporizador(timerId, { habilitado: !current })
-      await fetchData()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
   const handleDeleteTimer = async (timerId: string) => {
+    if (!isOnline) return
     try {
       await horariosService.deleteTemporizador(timerId)
-      await fetchData()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
   const handleAddTimer = async () => {
     if (!casaId || !newTimer.zone) return
+    if (!isOnline) return
     const dias: Record<string, boolean> = {}
     for (const d of ["L", "M", "X", "J", "V", "S", "D"]) {
       const key = dayMapReverse[d]
@@ -89,7 +77,7 @@ export function SchedulesView() {
       } as any)
       setShowAddModal(false)
       setNewTimer({ zone: "", startTime: "18:00", endTime: "23:00", days: ["L", "M", "X", "J", "V"], type: "fixed" })
-      await fetchData()
+      await refresh()
     } catch (err) { console.error(err) }
   }
 
@@ -120,7 +108,7 @@ export function SchedulesView() {
   ? zones.filter(z => session.zonas_permitidas!.includes(z.id))
   : zones
 
-  if (loading) {
+  if (isHydrating && !snapshot) {
     return (
       <AppShell title="Horarios y Temporizadores" subtitle="Programa el encendido automático de las luces" currentPath="/schedules">
         <div className="flex items-center justify-center py-20">
@@ -159,7 +147,8 @@ export function SchedulesView() {
         <div className="space-y-6">
           <button
             onClick={() => setShowAddModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 border-dashed border-border text-muted-foreground hover:border-primary hover:text-foreground transition-colors"
+            disabled={!isOnline}
+            className="w-full flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 border-dashed border-border text-muted-foreground hover:border-primary hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-muted-foreground"
           >
             <Plus className="h-5 w-5" />
             <span className="font-medium">Agregar temporizador</span>
@@ -172,6 +161,7 @@ export function SchedulesView() {
                 timer={timer}
                 onToggle={() => handleToggleTimer(timer.id, timer.isActive)}
                 onDelete={() => handleDeleteTimer(timer.id)}
+                isOnline={isOnline}
               />
             ))}
           </div>
@@ -267,8 +257,8 @@ export function SchedulesView() {
                 className="flex-1 px-5 py-3 rounded-xl bg-secondary text-secondary-foreground font-medium text-sm hover:bg-secondary/80 transition-colors">
                 Cancelar
               </button>
-              <button onClick={handleAddTimer} disabled={!newTimer.zone}
-                className="flex-1 px-5 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-50">
+              <button onClick={handleAddTimer} disabled={!newTimer.zone || !isOnline}
+                className="flex-1 px-5 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 Agregar
               </button>
             </div>

@@ -117,6 +117,7 @@ export function ZonesView() {
               onSelect={() => setSelectedZone(selectedZone === zone.id ? null : zone.id)}
               onToggle={() => handleToggle(zone.id)}
               onModeChange={(mode) => handleModeChange(zone.id, mode)}
+              isOnline={true}
             />
             {/* Show settings panel directly below selected zone */}
             {selectedZone === zone.id && settingsPanel && (
