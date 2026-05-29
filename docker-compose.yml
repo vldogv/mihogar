@@ -42,6 +42,15 @@ services:
         condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mihogar-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./infrastructure/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
   mock-esp32:
     build:
       context: ./mock-esp32
@@ -49,17 +58,40 @@ services:
     container_name: mihogar-mock-esp32
     environment:
       BACKEND_URL: http://server:8000
-      MOCK_CASA_ID: ${MOCK_CASA_ID}
+      MOCK_CASA_ID: ${MOCK_CASA_ID:-b0000001-0000-0000-0000-000000000001}
       CONFIG_POLL_SECONDS: 15
       HEARTBEAT_SECONDS: 30
       MOCK_SEND_TELEMETRY: "false"
       TELEMETRY_SECONDS: 60
       LOG_LEVEL: INFO
       HTTP_TIMEOUT_SECONDS: 10
+      # Fase 6: standalone + MQTT (sin backend principal).
+      MOCK_DISABLE_BACKEND_POLL: "true"
+      MOCK_SEED_FILE: app/fixtures/seed_state.json
+      MOCK_MQTT_ENABLED: "true"
+      MQTT_BROKER_URL: mqtt://mosquitto:1883
     ports:
       - "8080:8080"
     depends_on:
-      - server
+      - mosquitto
+    restart: unless-stopped
+
+  pi-hub:
+    build:
+      context: ./pi-hub
+      dockerfile: Dockerfile
+    container_name: mihogar-pi-hub
+    environment:
+      CASA_ID: ${MOCK_CASA_ID:-b0000001-0000-0000-0000-000000000001}
+      MQTT_BROKER_URL: mqtt://mosquitto:1883
+      DEVICE_ID: pi-hub
+      ACK_TIMEOUT_SECONDS: 2.0
+      HTTP_PORT: 8081
+      LOG_LEVEL: INFO
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mosquitto
     restart: unless-stopped
 
 volumes:
