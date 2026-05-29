@@ -2,12 +2,12 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { Home, Lightbulb, Calendar, BarChart3, Settings, Users, Menu, X, Wifi, WifiOff, LogOut, RefreshCw } from "lucide-react"
+import { Home, Lightbulb, Calendar, BarChart3, Settings, Users, Menu, X, Wifi, WifiOff, Radio, LogOut, RefreshCw } from "lucide-react"
 import { ConnectionStatus } from "@/components/connection-status"
 import { MobileNav } from "@/components/mobile-nav"
 import { OfflineBanner } from "@/components/offline-banner"
 import { useAuth } from "@/lib/auth/auth-context"
-import { useConnectivity } from "@/hooks/use-connectivity"
+import { useMode } from "@/lib/local-hub/mode-context"
 import { cn } from "@/lib/utils"
 import { usePermissions } from "@/lib/hooks/use-permissions"
 
@@ -21,7 +21,7 @@ interface AppShellProps {
 export function AppShell({ children, title, subtitle, currentPath }: AppShellProps) {
   const { session, user, activeCasa, isLoading, logout, changeHouse } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { isOnline } = useConnectivity()
+  const { mode } = useMode()
   const perms = usePermissions()
 
   const navigation = [
@@ -107,9 +107,18 @@ export function AppShell({ children, title, subtitle, currentPath }: AppShellPro
               </div>
             </div>
             <div className="flex items-center gap-2 lg:gap-3">
-              <div className={cn("flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-1.5 lg:py-2 rounded-xl text-xs lg:text-sm font-medium", isOnline ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>
-                {isOnline ? <Wifi className="h-3.5 w-3.5 lg:h-4 lg:w-4" /> : <WifiOff className="h-3.5 w-3.5 lg:h-4 lg:w-4" />}
-                <span className="hidden sm:inline">{isOnline ? "En línea" : "Sin conexión"}</span>
+              <div className={cn(
+                "flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-1.5 lg:py-2 rounded-xl text-xs lg:text-sm font-medium",
+                mode === "cloud" && "bg-emerald-50 text-emerald-700",
+                mode === "local-hub" && "bg-sky-50 text-sky-700",
+                mode === "offline" && "bg-amber-50 text-amber-700",
+              )}>
+                {mode === "cloud" && <Wifi className="h-3.5 w-3.5 lg:h-4 lg:w-4" />}
+                {mode === "local-hub" && <Radio className="h-3.5 w-3.5 lg:h-4 lg:w-4" />}
+                {mode === "offline" && <WifiOff className="h-3.5 w-3.5 lg:h-4 lg:w-4" />}
+                <span className="hidden sm:inline">
+                  {mode === "cloud" ? "En línea" : mode === "local-hub" ? "Hub local" : "Sin conexión"}
+                </span>
               </div>
             </div>
           </div>

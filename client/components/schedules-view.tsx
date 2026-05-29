@@ -6,7 +6,7 @@ import { TimerCard } from "@/components/timer-card"
 import { NightModeSettings } from "@/components/night-mode-settings"
 import { Plus, Clock, Moon, Calendar } from "lucide-react"
 import { useAuth } from "@/lib/auth/auth-context"
-import { useConnectivity } from "@/hooks/use-connectivity"
+import { useMode } from "@/lib/local-hub/mode-context"
 import { useSnapshot } from "@/lib/offline/snapshot-context"
 import { horariosService } from "@/lib/services/horarios"
 import type { SnapshotTemporizador } from "@/lib/offline/types"
@@ -29,7 +29,7 @@ export function SchedulesView() {
   const { session } = useAuth()
   const casaId = session?.casa_id_activa
   const { snapshot, isHydrating, refresh } = useSnapshot()
-  const { isOnline } = useConnectivity()
+  const { canWriteCloud } = useMode()
   const timers = snapshot?.temporizadores ?? []
   const zones = (snapshot?.zonas ?? []).map((z) => z.zona)
   const [activeTab, setActiveTab] = useState<"timers" | "night">("timers")
@@ -43,7 +43,7 @@ export function SchedulesView() {
   })
 
   const handleToggleTimer = async (timerId: string, current: boolean) => {
-    if (!isOnline) return
+    if (!canWriteCloud) return
     try {
       await horariosService.updateTemporizador(timerId, { habilitado: !current })
       await refresh()
@@ -51,7 +51,7 @@ export function SchedulesView() {
   }
 
   const handleDeleteTimer = async (timerId: string) => {
-    if (!isOnline) return
+    if (!canWriteCloud) return
     try {
       await horariosService.deleteTemporizador(timerId)
       await refresh()
@@ -60,7 +60,7 @@ export function SchedulesView() {
 
   const handleAddTimer = async () => {
     if (!casaId || !newTimer.zone) return
-    if (!isOnline) return
+    if (!canWriteCloud) return
     const dias: Record<string, boolean> = {}
     for (const d of ["L", "M", "X", "J", "V", "S", "D"]) {
       const key = dayMapReverse[d]
@@ -147,7 +147,7 @@ export function SchedulesView() {
         <div className="space-y-6">
           <button
             onClick={() => setShowAddModal(true)}
-            disabled={!isOnline}
+            disabled={!canWriteCloud}
             className="w-full flex items-center justify-center gap-2 px-5 py-4 rounded-2xl border-2 border-dashed border-border text-muted-foreground hover:border-primary hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-muted-foreground"
           >
             <Plus className="h-5 w-5" />
@@ -161,7 +161,7 @@ export function SchedulesView() {
                 timer={timer}
                 onToggle={() => handleToggleTimer(timer.id, timer.isActive)}
                 onDelete={() => handleDeleteTimer(timer.id)}
-                isOnline={isOnline}
+                isOnline={canWriteCloud}
               />
             ))}
           </div>
@@ -257,7 +257,7 @@ export function SchedulesView() {
                 className="flex-1 px-5 py-3 rounded-xl bg-secondary text-secondary-foreground font-medium text-sm hover:bg-secondary/80 transition-colors">
                 Cancelar
               </button>
-              <button onClick={handleAddTimer} disabled={!newTimer.zone || !isOnline}
+              <button onClick={handleAddTimer} disabled={!newTimer.zone || !canWriteCloud}
                 className="flex-1 px-5 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 Agregar
               </button>
