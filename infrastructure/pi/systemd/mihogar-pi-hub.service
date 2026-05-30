@@ -1,0 +1,15 @@
+[Unit]
+Description=Mi Hogar pi-hub (API local + MQTT bridge)
+After=network-online.target mosquitto.service mihogar-mock-esp32.service
+Wants=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+User=aegv17
+WorkingDirectory=/home/aegv17/mihogar/pi-hub
+ExecStart=/home/aegv17/mihogar/pi-hub/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8081
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

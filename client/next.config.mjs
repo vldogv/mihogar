@@ -1,5 +1,11 @@
 import withSerwistInit from "@serwist/next"
 
+// Build target switch:
+//   BUILD_TARGET=pi-static  → static export servido desde la Pi por Caddy.
+//   (default, sin var)      → build estándar (Vercel / dev / standalone).
+// Static export no soporta rewrites(); en la Pi el proxy /api/* lo hace Caddy.
+const isPiStatic = process.env.BUILD_TARGET === "pi-static"
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   turbopack: {
@@ -11,14 +17,18 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://3.212.121.202:8000/api/:path*',
-      },
-    ]
-  },
+  ...(isPiStatic
+    ? { output: "export" }
+    : {
+        async rewrites() {
+          return [
+            {
+              source: '/api/:path*',
+              destination: 'http://3.212.121.202:8000/api/:path*',
+            },
+          ]
+        },
+      }),
 }
 
 const withSerwist = withSerwistInit({
