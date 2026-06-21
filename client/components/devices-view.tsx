@@ -6,7 +6,7 @@ import { DeviceCard } from "@/components/device-card"
 import { WifiSetupModal } from "@/components/wifi-setup-modal"
 import { AddDeviceWizard } from "@/components/add-device-wizard"
 import { Cpu, Lightbulb, Radio, Sun, Camera, Plus, Wifi, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react"
-import { useConnectivity } from "@/hooks/use-connectivity"
+import { useMode } from "@/lib/local-hub/mode-context"
 import { useSnapshot } from "@/lib/offline/snapshot-context"
 import { cn } from "@/lib/utils"
 import { usePermissions } from "@/lib/hooks/use-permissions"
@@ -27,7 +27,7 @@ const deviceTypeLabels: Record<string, string> = {
 
 export function DevicesView() {
   const { snapshot, isHydrating, refresh } = useSnapshot()
-  const { isOnline } = useConnectivity()
+  const { canWriteCloud } = useMode()
   const devices = snapshot?.dispositivos ?? []
   const [showWifiSetup, setShowWifiSetup] = useState(false)
   const [showAddDevice, setShowAddDevice] = useState(false)
@@ -86,14 +86,14 @@ export function DevicesView() {
         {/* Quick actions */}
         <div className="flex flex-wrap gap-2 lg:gap-3">
           <button onClick={() => setShowWifiSetup(true)}
-            disabled={!isOnline}
+            disabled={!canWriteCloud}
             className="flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl bg-secondary text-secondary-foreground font-medium text-xs lg:text-sm hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-secondary">
             <Wifi className="h-3.5 w-3.5 lg:h-4 lg:w-4" /> WiFi
           </button>
           {perms.canAddDevice && (
             <button
               onClick={() => setShowAddDevice(true)}
-              disabled={!isOnline}
+              disabled={!canWriteCloud}
               className="flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-xs lg:text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
             >
               <Plus className="h-3.5 w-3.5 lg:h-4 lg:w-4" />

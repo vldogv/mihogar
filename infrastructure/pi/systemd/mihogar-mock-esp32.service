@@ -1,0 +1,15 @@
+[Unit]
+Description=Mi Hogar mock ESP32 (MQTT)
+After=network-online.target mosquitto.service
+Wants=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+User=aegv17
+WorkingDirectory=/home/aegv17/mihogar/mock-esp32
+ExecStart=/home/aegv17/mihogar/mock-esp32/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -15,14 +15,17 @@ Routes:
   - GET  /mock/state
 """
 import asyncio
+import json
 import logging
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
 from .backend_client import BackendClient
 from .config import Settings
+from .mqtt_loop import mqtt_loop
 from .routes import health as health_routes
 from .routes import mock as mock_routes
 from .state import InMemoryState
@@ -55,26 +58,48 @@ async def lifespan(app: FastAPI):
     state = InMemoryState()
     client = BackendClient(settings)
 
+    # Cargar seed antes de arrancar loops, si está configurado.
+    if settings.MOCK_SEED_FILE:
+        seed_path = Path(settings.MOCK_SEED_FILE)
+        if not seed_path.is_absolute():
+            # Resuelvo relativo al package, no al CWD — así MOCK_SEED_FILE=
+            # "app/fixtures/seed_state.json" funciona en standalone y compose.
+            seed_path = Path(__file__).parent.parent / seed_path
+        try:
+            seed_payload = json.loads(seed_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error("Seed file %s no se pudo cargar: %s", seed_path, exc)
+            raise
+        await state.replace_config(seed_payload)
+        logger.info(
+            "Seed cargado de %s — zonas=%d dispositivos=%d",
+            seed_path, len(state.zonas), len(state.dispositivos),
+        )
+
     # Compartido con routes vía app.state
     app.state.settings = settings
     app.state.state = state
     app.state.client = client
 
-    # Background tasks
-    tasks: list[asyncio.Task] = [
-        asyncio.create_task(
+    # Background tasks. Los loops de polling al backend principal se saltan
+    # si MOCK_DISABLE_BACKEND_POLL=true (Fase 6 standalone) o si no hay
+    # backend a mano. MQTT loop se prende con MOCK_MQTT_ENABLED.
+    tasks: list[asyncio.Task] = []
+    if not settings.MOCK_DISABLE_BACKEND_POLL:
+        tasks.append(asyncio.create_task(
             config_poll_loop(state, client, settings), name="config-poll",
-        ),
-        asyncio.create_task(
+        ))
+        tasks.append(asyncio.create_task(
             heartbeat_loop(client, settings), name="heartbeat",
-        ),
-    ]
-    if settings.MOCK_SEND_TELEMETRY:
-        tasks.append(
-            asyncio.create_task(
+        ))
+        if settings.MOCK_SEND_TELEMETRY:
+            tasks.append(asyncio.create_task(
                 telemetry_loop(state, client, settings), name="telemetry",
-            )
-        )
+            ))
+    if settings.MOCK_MQTT_ENABLED:
+        tasks.append(asyncio.create_task(
+            mqtt_loop(state, settings), name="mqtt",
+        ))
     app.state.background_tasks = tasks
 
     try:

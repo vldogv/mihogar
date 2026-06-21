@@ -1,0 +1,145 @@
+{
+  "casa_id": "b0000001-0000-0000-0000-000000000001",
+  "casa_nombre": "Casa Principal",
+  "timestamp": "2026-05-26T00:00:00+00:00",
+  "zonas": [
+    {
+      "zona_id": "d0000001-0000-0000-0000-000000000001",
+      "nombre": "Sala",
+      "tipo": "habitacion",
+      "orden": 1,
+      "encendida": true,
+      "modo": "automatico",
+      "umbral_oscuridad": 40,
+      "auto_encender": true,
+      "tiempo_apagado_auto": 60,
+      "updated_at": "2026-05-26T00:00:00+00:00"
+    },
+    {
+      "zona_id": "d0000001-0000-0000-0000-000000000002",
+      "nombre": "Cocina",
+      "tipo": "habitacion",
+      "orden": 2,
+      "encendida": true,
+      "modo": "temporizador",
+      "umbral_oscuridad": 40,
+      "auto_encender": true,
+      "tiempo_apagado_auto": 60,
+      "updated_at": "2026-05-26T00:00:00+00:00"
+    },
+    {
+      "zona_id": "d0000001-0000-0000-0000-000000000003",
+      "nombre": "Recámara Principal",
+      "tipo": "habitacion",
+      "orden": 3,
+      "encendida": false,
+      "modo": "manual",
+      "umbral_oscuridad": 40,
+      "auto_encender": true,
+      "tiempo_apagado_auto": 60,
+      "updated_at": "2026-05-26T00:00:00+00:00"
+    },
+    {
+      "zona_id": "d0000001-0000-0000-0000-000000000004",
+      "nombre": "Recámara 2",
+      "tipo": "habitacion",
+      "orden": 4,
+      "encendida": false,
+      "modo": "automatico",
+      "umbral_oscuridad": 40,
+      "auto_encender": true,
+      "tiempo_apagado_auto": 60,
+      "updated_at": "2026-05-26T00:00:00+00:00"
+    },
+    {
+      "zona_id": "d0000001-0000-0000-0000-000000000005",
+      "nombre": "Pasillo",
+      "tipo": "zona_de_paso",
+      "orden": 5,
+      "encendida": false,
+      "modo": "automatico",
+      "umbral_oscuridad": 30,
+      "auto_encender": true,
+      "tiempo_apagado_auto": 30,
+      "updated_at": "2026-05-26T00:00:00+00:00"
+    },
+    {
+      "zona_id": "d0000001-0000-0000-0000-000000000006",
+      "nombre": "Baño",
+      "tipo": "zona_de_paso",
+      "orden": 6,
+      "encendida": false,
+      "modo": "automatico",
+      "umbral_oscuridad": 30,
+      "auto_encender": true,
+      "tiempo_apagado_auto": 30,
+      "updated_at": "2026-05-26T00:00:00+00:00"
+    }
+  ],
+  "dispositivos": [
+    {
+      "id": "f0000001-0000-0000-0000-000000000001",
+      "zona_id": "d0000001-0000-0000-0000-000000000001",
+      "tipo": "modulo_shelly",
+      "nombre": "Shelly Sala",
+      "mac_address": "AA:BB:CC:DD:01:01"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000002",
+      "zona_id": "d0000001-0000-0000-0000-000000000001",
+      "tipo": "sensor_pir",
+      "nombre": "PIR Sala",
+      "mac_address": "AA:BB:CC:DD:01:02"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000003",
+      "zona_id": "d0000001-0000-0000-0000-000000000001",
+      "tipo": "sensor_crepuscular",
+      "nombre": "Luz Sala",
+      "mac_address": "AA:BB:CC:DD:01:03"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000004",
+      "zona_id": "d0000001-0000-0000-0000-000000000002",
+      "tipo": "modulo_shelly",
+      "nombre": "Shelly Cocina",
+      "mac_address": "AA:BB:CC:DD:02:01"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000005",
+      "zona_id": "d0000001-0000-0000-0000-000000000003",
+      "tipo": "modulo_shelly",
+      "nombre": "Shelly Rec",
+      "mac_address": "AA:BB:CC:DD:03:01"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000006",
+      "zona_id": "d0000001-0000-0000-0000-000000000004",
+      "tipo": "modulo_shelly",
+      "nombre": "Shelly Rec2",
+      "mac_address": "AA:BB:CC:DD:04:01"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000007",
+      "zona_id": "d0000001-0000-0000-0000-000000000005",
+      "tipo": "sensor_pir",
+      "nombre": "PIR Pasillo",
+      "mac_address": "AA:BB:CC:DD:05:01"
+    },
+    {
+      "id": "f0000001-0000-0000-0000-000000000008",
+      "zona_id": "d0000001-0000-0000-0000-000000000006",
+      "tipo": "modulo_shelly",
+      "nombre": "Shelly Baño",
+      "mac_address": "AA:BB:CC:DD:06:01"
+    }
+  ],
+  "temporizadores": [],
+  "modo_nocturno": null,
+  "ml_profiles": [],
+  "info": {
+    "device_id": "esp32-mock-001",
+    "firmware_version": "0.1.0-mock",
+    "capabilities": ["zones.toggle", "zones.mode", "scene.all-on", "scene.all-off"]
+  }
+}

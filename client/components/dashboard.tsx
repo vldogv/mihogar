@@ -1,40 +1,41 @@
 "use client"
 
-import { Home, Lightbulb, Calendar, BarChart3, Settings, Users, Wifi, WifiOff, Sun, Moon } from "lucide-react"
+import { Home, Lightbulb, Calendar, BarChart3, Settings, Users, Wifi, WifiOff, Radio, Sun, Moon } from "lucide-react"
 import { ZoneCard } from "@/components/zone-card"
 import { QuickActions } from "@/components/quick-actions"
 import { ConnectionStatus } from "@/components/connection-status"
 import { MobileNav } from "@/components/mobile-nav"
 import { OfflineBanner } from "@/components/offline-banner"
 import { useAuth } from "@/lib/auth/auth-context"
-import { useConnectivity } from "@/hooks/use-connectivity"
+import { useMode } from "@/lib/local-hub/mode-context"
 import { useSnapshot } from "@/lib/offline/snapshot-context"
-import { panelService } from "@/lib/services/panel"
+import { homeControl } from "@/lib/services/home-control"
 import { cn } from "@/lib/utils"
 
 
 export function Dashboard() {
   const { session, activeCasa, isLoading: authLoading } = useAuth()
   const { snapshot, isHydrating, refresh } = useSnapshot()
-  const { isOnline } = useConnectivity()
+  const { mode, hubBaseURL, canWriteZonas } = useMode()
+  const ctx = { mode, hubBaseURL }
 
   const casaId = session?.casa_id_activa
 
   const handleToggleZone = async (zonaId: string, currentState: boolean) => {
-    if (!isOnline) return
+    if (!canWriteZonas) return
     try {
-      await panelService.toggleZona(zonaId, !currentState)
+      await homeControl.toggleZona(ctx, zonaId, !currentState)
       await refresh()
     } catch (err) {
       console.error("Error toggling zone:", err)
     }
   }
 
-  const handleModeChange = async (zonaId: string, mode: "auto" | "manual" | "timer") => {
-    if (!isOnline) return
+  const handleModeChange = async (zonaId: string, m: "auto" | "manual" | "timer") => {
+    if (!canWriteZonas) return
     const modeMap: Record<string, string> = { auto: "automatico", manual: "manual", timer: "temporizador" }
     try {
-      await panelService.cambiarModo(zonaId, modeMap[mode])
+      await homeControl.cambiarModo(ctx, zonaId, modeMap[m])
       await refresh()
     } catch (err) {
       console.error("Error changing mode:", err)
@@ -43,18 +44,18 @@ export function Dashboard() {
 
   const handleAllOn = async () => {
     if (!casaId) return
-    if (!isOnline) return
+    if (!canWriteZonas) return
     try {
-      await panelService.encenderTodo(casaId)
+      await homeControl.encenderTodo(ctx, casaId)
       await refresh()
     } catch (err) { console.error(err) }
   }
 
   const handleAllOff = async () => {
     if (!casaId) return
-    if (!isOnline) return
+    if (!canWriteZonas) return
     try {
-      await panelService.apagarTodo(casaId)
+      await homeControl.apagarTodo(ctx, casaId)
       await refresh()
     } catch (err) { console.error(err) }
   }
@@ -148,18 +149,24 @@ export function Dashboard() {
               <div
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium",
-                  isOnline ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+                  mode === "cloud" && "bg-emerald-50 text-emerald-700",
+                  mode === "local-hub" && "bg-sky-50 text-sky-700",
+                  mode === "offline" && "bg-amber-50 text-amber-700",
                 )}
               >
-                {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                <span className="hidden sm:inline">{isOnline ? "En línea" : "Sin conexión"}</span>
+                {mode === "cloud" && <Wifi className="h-3.5 w-3.5" />}
+                {mode === "local-hub" && <Radio className="h-3.5 w-3.5" />}
+                {mode === "offline" && <WifiOff className="h-3.5 w-3.5" />}
+                <span className="hidden sm:inline">
+                  {mode === "cloud" ? "En línea" : mode === "local-hub" ? "Hub local" : "Sin conexión"}
+                </span>
               </div>
             </div>
           </div>
         </header>
 
         <div className="px-3 sm:px-4 py-3 sm:py-4 pb-20 lg:px-8 lg:py-8 lg:pb-8 space-y-4 sm:space-y-6">
-          <QuickActions onAllOn={handleAllOn} onAllOff={handleAllOff} onAutoAll={handleAllOn} isOnline={isOnline} />
+          <QuickActions onAllOn={handleAllOn} onAllOff={handleAllOff} onAutoAll={handleAllOn} isOnline={canWriteZonas} />
 
           <section>
             <h3 className="text-sm sm:text-base lg:text-lg font-semibold text-foreground mb-3 sm:mb-4">Zonas del Hogar</h3>
@@ -170,7 +177,7 @@ export function Dashboard() {
                   zone={zone}
                   onToggle={() => handleToggleZone(zone.id, zone.isOn)}
                   onModeChange={(mode) => handleModeChange(zone.id, mode)}
-                  isOnline={isOnline}
+                  isOnline={canWriteZonas}
                 />
               ))}
             </div>

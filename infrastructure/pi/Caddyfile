@@ -1,0 +1,22 @@
+192.168.100.15 {
+	tls internal
+	encode gzip
+
+	# API local del pi-hub (los 7 endpoints exactos)
+	@hub path /health /info /state /zones/*/toggle /zones/*/mode /scene/*
+	handle @hub {
+		reverse_proxy localhost:8081
+	}
+
+	# API cloud (reemplaza el rewrite de Next)
+	handle /api/* {
+		reverse_proxy http://3.212.121.202:8000
+	}
+
+	# PWA estática (static export)
+	handle {
+		root * /home/aegv17/mihogar/www
+		try_files {path}.html {path} /index.html
+		file_server
+	}
+}

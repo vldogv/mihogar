@@ -66,7 +66,7 @@ export interface SnapshotModoNocturno {
 export interface SnapshotCasaInfo {
   id: string
   nombre: string
-  zona_horaria: string
+  zona_horaria: string | null
 }
 
 export interface SnapshotData {
