@@ -8,9 +8,12 @@ simulador — por eso CASA_ID y no MOCK_CASA_ID).
 
 check_health() usa GET /api/health.
 
-get_commands() / post_command_ack(): contrato ASUMIDO, no confirmado
-contra el backend real de Aldo. Ver bridge_loop.py para el flag que
-mantiene esto desactivado hasta validarlo.
+get_commands(): contrato confirmado contra
+server/app/interfaces/api/routes/device_sync_routes.py — devuelve
+list[PendingCommand] directo (id, zona_id, comando, parametros, created_at).
+HOY el endpoint es un stub que siempre regresa [] — el diseño actual no
+lo necesita, ya que el ESP32 detecta cambios comparando GET /config
+contra su copia local. No existe endpoint de ack; no se llama ninguno.
 """
 import asyncio
 import logging
@@ -45,11 +48,11 @@ class BackendClient:
         await self._client.aclose()
 
     async def _request_with_retry(
-        self, method: str, path: str, *, json: Optional[Any] = None,
+        self, method: str, path: str, *, json: Optional[Any] = None, params: Optional[dict] = None,
     ) -> Optional[httpx.Response]:
         for attempt in range(_MAX_ATTEMPTS):
             try:
-                response = await self._client.request(method, path, json=json)
+                response = await self._client.request(method, path, json=json, params=params)
             except httpx.RequestError as exc:
                 wait = min(_BACKOFF_BASE * (2 ** attempt), _BACKOFF_MAX)
                 logger.warning(
@@ -135,9 +138,15 @@ class BackendClient:
         )
         return response is not None and response.status_code == 200
 
-    async def get_commands(self) -> Optional[list[dict[str, Any]]]:
-        """GET /api/device/sync/commands. Schema ASUMIDO, no confirmado."""
-        response = await self._request_with_retry("GET", "/api/device/sync/commands")
+    async def get_commands(self, since: Optional[str] = None) -> Optional[list[dict[str, Any]]]:
+        """GET /api/device/sync/commands.
+
+        Schema confirmado: lista directa de PendingCommand
+        (id, zona_id, comando, parametros, created_at). HOY es un stub
+        que siempre regresa [] — ver docstring del módulo.
+        """
+        params = {"since": since} if since else None
+        response = await self._request_with_retry("GET", "/api/device/sync/commands", params=params)
         if response is None:
             return None
         if response.status_code != 200:
@@ -146,14 +155,4 @@ class BackendClient:
                 response.status_code, response.text[:200],
             )
             return None
-        return response.json().get("commands", [])
-
-    async def post_command_ack(
-        self, command_id: str, status: str, detail: Optional[dict[str, Any]] = None,
-    ) -> bool:
-        """POST /api/device/sync/commands/{command_id}/ack — schema ASUMIDO."""
-        body = {"status": status, "detail": detail or {}}
-        response = await self._request_with_retry(
-            "POST", f"/api/device/sync/commands/{command_id}/ack", json=body,
-        )
-        return response is not None and response.status_code == 200
+        return response.json()
