@@ -5,6 +5,7 @@ Responsabilidades:
   - Conectar al broker y mantener la conexión (reconnect con backoff).
   - Suscribir a info, state, status y ack/<req_id>.
   - Mantener el LastKnownState a partir de los retained de info/state.
+  - Encolar cada `state` nuevo en BridgeStore.state_queue (puente Pi→EC2).
   - Exponer publish_command(topic_suffix, body) que: genera req_id, publica
     en mihogar/<casa>/cmd/<topic_suffix>, espera el ack en
     mihogar/<casa>/ack/<req_id> con timeout, devuelve el payload del ack.
@@ -25,6 +26,7 @@ from urllib.parse import urlparse
 import aiomqtt
 
 from .config import Settings
+from .db import BridgeStore
 from .state import LastKnownState
 
 logger = logging.getLogger(__name__)
@@ -56,9 +58,10 @@ class BrokerUnavailable(Exception):
 
 
 class MqttClient:
-    def __init__(self, settings: Settings, state: LastKnownState) -> None:
+    def __init__(self, settings: Settings, state: LastKnownState, bridge_store: BridgeStore) -> None:
         self._settings = settings
         self._state = state
+        self._bridge_store = bridge_store
         self._client: Optional[aiomqtt.Client] = None
         self._pending: dict[str, asyncio.Future] = {}
         self._task: Optional[asyncio.Task] = None
@@ -76,7 +79,6 @@ class MqttClient:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        # Cancelar todos los futures pendientes.
         for fut in self._pending.values():
             if not fut.done():
                 fut.set_exception(BrokerUnavailable("MQTT client stopped"))
@@ -129,6 +131,9 @@ class MqttClient:
 
         if topic == f"{self._prefix}/state":
             await self._state.set_state(body)
+            zonas = body.get("zonas", [])
+            if zonas:
+                await self._bridge_store.enqueue_state(zonas)
             logger.debug("Pi-hub MQTT: state actualizado")
         elif topic == f"{self._prefix}/info":
             await self._state.set_info(body)
@@ -141,8 +146,6 @@ class MqttClient:
             req_id = topic.rsplit("/", 1)[-1]
             fut = self._pending.pop(req_id, None)
             if fut is None:
-                # Ack tardío: el future ya fue limpiado por el finally del timeout,
-                # o el ack es de un req_id que nunca registramos (ruido). Sin leak.
                 logger.info("Pi-hub MQTT: ack tardío/desconocido req_id=%s — ignorado", req_id)
                 return
             if not fut.done():
@@ -155,16 +158,6 @@ class MqttClient:
     async def publish_command(
         self, topic_suffix: str, body: dict[str, Any],
     ) -> dict[str, Any]:
-        """Publica un comando y espera el ack.
-
-        topic_suffix: parte después de "mihogar/<casa>/cmd/". Ej:
-          "zones/<zona_id>/toggle", "scene/all-on".
-        body: dict del payload del comando (sin req_id — lo agrega esta función).
-
-        Devuelve el payload del ack del ESP32.
-        Levanta AckTimeout si no llega ack dentro de ACK_TIMEOUT_SECONDS.
-        Levanta BrokerUnavailable si no hay conexión al broker.
-        """
         if self._client is None:
             raise BrokerUnavailable("No hay conexión activa al broker")
 
