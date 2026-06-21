@@ -1,20 +1,23 @@
 """
 Background tasks del puente Pi → EC2 (Fase 7 §7).
 
-Cinco loops independientes, cancelables (mismo patrón que
-mock-esp32/app/sync_loop.py):
-
-  - ec2_health_loop:    prueba GET /api/health cada EC2_HEALTH_CACHE_SECONDS,
-                         mantiene un flag cacheado que los demás loops leen
-                         antes de intentar hablar con EC2.
+  - ec2_health_loop:    prueba GET /api/health cada EC2_HEALTH_CACHE_SECONDS.
   - config_poll_loop:   descarga config de EC2 y la guarda en config_cache.
   - heartbeat_loop:     manda heartbeat a EC2.
   - state_drain_loop:   vacía el snapshot pendiente de state_queue hacia
                          POST /api/device/sync/state.
-  - commands_poll_loop: (DESHABILITADO por default) GET /api/device/sync/
-                         commands y ejecuta cada uno vía
-                         mqtt.publish_command() — el mismo mecanismo que ya
-                         usan las rutas HTTP de zonas/escenas.
+  - commands_poll_loop: DECISIÓN CERRADA DE EQUIPO (confirmada por Aldo,
+                         21/jun/2026): se queda desactivado permanentemente,
+                         no "pendiente de confirmar". GET /api/device/sync/
+                         commands es un stub que siempre regresa [] y se
+                         queda así a propósito — el canal de comandos
+                         inmediatos del proyecto es MQTT (PWA → pi-hub →
+                         MQTT → ESP32, ya implementado y probado
+                         end-to-end). /api/device/sync/* es solo
+                         sincronización diferida (telemetría/estado/config
+                         vía polling de /config). Este loop y su mapeo de
+                         comandos se dejan en el código como referencia,
+                         pero no hay plan de activarlos.
 """
 import asyncio
 import logging
@@ -28,8 +31,6 @@ logger = logging.getLogger(__name__)
 
 
 class Ec2Health:
-    """Flag cacheado de si EC2 respondió la última vez que se probó."""
-
     def __init__(self) -> None:
         self._reachable = False
         self._lock = asyncio.Lock()
@@ -97,7 +98,6 @@ async def heartbeat_loop(client: BackendClient, settings: Settings) -> None:
 async def state_drain_loop(
     store: BridgeStore, client: BackendClient, health: Ec2Health, settings: Settings,
 ) -> None:
-    """Vacía el snapshot de state_queue hacia EC2 cuando esté alcanzable."""
     logger.info(
         "state_drain_loop iniciado (intervalo=%ds)", settings.DRAIN_INTERVAL_SECONDS,
     )
@@ -130,24 +130,31 @@ async def state_drain_loop(
         raise
 
 
+# Mapeo confirmado contra PendingCommand.comando en device_sync_routes.py.
+# Se deja como referencia histórica — ver docstring del módulo: este loop
+# no se activa, decisión cerrada de equipo.
+# "actualizar_config" no mapea a un comando MQTT de zona — no se incluye.
 _COMMAND_TOPIC_MAP = {
-    "zona_toggle": lambda c: (f"zones/{c['zona_id']}/toggle", {"encendida": c["encendida"]}),
-    "zona_mode": lambda c: (f"zones/{c['zona_id']}/mode", {"modo": c["modo"]}),
-    "scene_all_on": lambda c: ("scene/all-on", {}),
-    "scene_all_off": lambda c: ("scene/all-off", {}),
+    "encender": lambda c: (f"zones/{c['zona_id']}/toggle", {"encendida": True}),
+    "apagar": lambda c: (f"zones/{c['zona_id']}/toggle", {"encendida": False}),
+    "cambiar_modo": lambda c: (
+        f"zones/{c['zona_id']}/mode", {"modo": c.get("parametros", {}).get("modo")},
+    ),
 }
 
 
 async def commands_poll_loop(
     client: BackendClient, mqtt: MqttClient, health: Ec2Health, settings: Settings,
 ) -> None:
-    """Camino inverso: EC2 → ESP32. Contrato de /commands ASUMIDO.
+    """Camino inverso EC2 → ESP32. NO SE USA — ver docstring del módulo.
 
-    Desactivado por default (COMMANDS_POLL_ENABLED=false) hasta confirmar
-    el schema real con Aldo.
+    Decisión cerrada de equipo (Aldo, 21/jun/2026): el canal de comandos
+    inmediatos es MQTT, ya implementado y probado. Este loop existe solo
+    como código de referencia por si algún día se reconsidera; no hay
+    plan de activarlo (COMMANDS_POLL_ENABLED se queda en false).
     """
     logger.info(
-        "commands_poll_loop iniciado (intervalo=%ds) — CONTRATO ASUMIDO, NO CONFIRMADO",
+        "commands_poll_loop iniciado (intervalo=%ds) — NOTA: este camino fue descartado, ver docstring del módulo",
         settings.COMMANDS_POLL_SECONDS,
     )
     try:
@@ -159,28 +166,24 @@ async def commands_poll_loop(
             if not commands:
                 continue
             for cmd in commands:
-                await _execute_command(cmd, client, mqtt)
+                await _execute_command(cmd, mqtt)
     except asyncio.CancelledError:
         logger.info("commands_poll_loop cancelado limpiamente")
         raise
 
 
-async def _execute_command(cmd: dict, client: BackendClient, mqtt: MqttClient) -> None:
-    tipo = cmd.get("tipo")
-    builder = _COMMAND_TOPIC_MAP.get(tipo)
-    command_id = cmd.get("command_id", "desconocido")
+async def _execute_command(cmd: dict, mqtt: MqttClient) -> None:
+    comando = cmd.get("comando")
+    builder = _COMMAND_TOPIC_MAP.get(comando)
+    cmd_id = cmd.get("id", "desconocido")
     if builder is None:
-        logger.warning("commands_poll: tipo desconocido '%s' (command_id=%s)", tipo, command_id)
-        await client.post_command_ack(command_id, "rejected", {"reason": f"tipo desconocido: {tipo}"})
+        logger.warning("commands_poll: comando no manejado '%s' (id=%s)", comando, cmd_id)
         return
     try:
         topic_suffix, body = builder(cmd)
         ack = await mqtt.publish_command(topic_suffix, body)
-        await client.post_command_ack(command_id, "delivered", ack)
-        logger.info("commands_poll: command_id=%s entregado, ack status=%s", command_id, ack.get("status"))
+        logger.info("commands_poll: id=%s entregado al ESP32, ack status=%s", cmd_id, ack.get("status"))
     except AckTimeout:
-        logger.warning("commands_poll: command_id=%s sin respuesta del ESP32 (timeout)", command_id)
-        await client.post_command_ack(command_id, "timeout")
+        logger.warning("commands_poll: id=%s sin respuesta del ESP32 (timeout)", cmd_id)
     except BrokerUnavailable:
-        logger.warning("commands_poll: command_id=%s — broker MQTT no disponible", command_id)
-        await client.post_command_ack(command_id, "broker_unavailable")
+        logger.warning("commands_poll: id=%s — broker MQTT no disponible", cmd_id)
