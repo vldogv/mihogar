@@ -2,16 +2,18 @@
 
 > **Estado:** validado por el smoke test E2E (Pi-hub + mock-esp32 sobre Mosquitto local) — los 4 casos pasan: `applied`, `stale`, `unknown_zone`, `ack timeout`. Plus ack tardío (descartado limpio) y online/offline (LWT + offline retained).
 >
+> **Extensión 21/jun/2026:** se agregan los topics `telemetry` y `alerts` (sección 3, payloads) y su consumo en `pi-hub` (encolado en `telemetry_queue`/`alerts_queue`, drenado hacia EC2). Definidos y con código escrito, **pendientes de validar contra el ESP32-C5 físico real** — el firmware lo publica, pero no se ha confirmado end-to-end en hardware todavía.
+>
 > **Scope:** solo el link **Pi ↔ ESP32** sobre un broker MQTT local (Mosquitto) que corre en la Pi. La sincronización del ESP32 con la nube está fuera del scope de este doc.
 
 ---
 
 ## 1) Convenciones
 
-- **Broker:** Mosquitto corriendo en la Pi. Puerto 1883 sin TLS en v1 (red LAN doméstica). El ESP32 se conecta como cliente MQTT con `client_id = "esp32-<casa_id>"`.
+- **Broker:** Mosquitto corriendo en la Pi. Puerto 1883 sin TLS en v1 (red LAN doméstica). El ESP32 se conecta como cliente MQTT con `client_id= "esp32-<casa_id>"`.
 - **Auth:** anonymous en v1. A revisar para v2: username/password o ACL por casa.
 - **QoS:** 1 (at-least-once) en todos los publishes. La Pi y el ESP32 deben ser idempotentes sobre `req_id` (no aplicar dos veces el mismo comando si llega duplicado).
-- **Retained:** los topics de estado (`state`, `info`) se publican con `retained=true`. Los comandos y acks NO son retained (son efímeros).
+- **Retained:** los topics de estado (`state`, `info`) se publican con `retained=true`. Los comandos, acks, telemetría y alertas NO son retained (son efímeros/streaming).
 - **Payloads:** JSON UTF-8.
 - **IDs:** UUID v4 strings (mismos que viven en RDS, los que la PWA ya cacheó en su snapshot).
 - **Timestamps:** ISO 8601 con timezone (`2026-05-24T12:34:56+00:00`). El `server_timestamp` lo pone el ESP32 con su RTC.
@@ -22,23 +24,9 @@
 ## 2) Topic tree
 
 Todos los topics están scopeados por `casa_id` para que en el futuro varias casas puedan compartir broker sin colisión.
-
-```
-mihogar/<casa_id>/info                       (ESP32 pub, retained)
-mihogar/<casa_id>/state                      (ESP32 pub, retained)
-mihogar/<casa_id>/status                     (ESP32 LWT, retained)
-
-mihogar/<casa_id>/cmd/zones/<zona_id>/toggle (Pi pub)
-mihogar/<casa_id>/cmd/zones/<zona_id>/mode   (Pi pub)
-mihogar/<casa_id>/cmd/scene/all-on           (Pi pub)
-mihogar/<casa_id>/cmd/scene/all-off          (Pi pub)
-
-mihogar/<casa_id>/ack/<req_id>               (ESP32 pub)
-```
-
 **Suscripciones:**
 
-- Pi se suscribe a: `mihogar/<casa_id>/info`, `mihogar/<casa_id>/state`, `mihogar/<casa_id>/status`, `mihogar/<casa_id>/ack/+`.
+- Pi se suscribe a: `mihogar/<casa_id>/info`, `mihogar/<casa_id>/state`, `mihogar/<casa_id>/status`, `mihogar/<casa_id>/telemetry`, `mihogar/<casa_id>/alerts`, `mihogar/<casa_id>/ack/+`.
 - ESP32 se suscribe a: `mihogar/<casa_id>/cmd/#` (un solo filter que cubre todos los comandos).
 
 ---
@@ -119,6 +107,60 @@ Implementación de referencia en el mock: ver `mock-esp32/app/mqtt_loop.py`,
 `_publish_info_and_state` (publica `online: true` al conectar) y el bloque
 `except asyncio.CancelledError` (publica `online: false` retained en el
 shutdown del lifespan).
+
+### `mihogar/<casa_id>/telemetry` (NO retained)
+
+Publicado periódicamente por el ESP32 (intervalo sugerido: 60s — el mismo
+orden de magnitud que `TELEMETRY_SECONDS` del mock). **Shape idéntico** al
+body de `POST /api/device/sync/telemetry` del backend
+(`TelemetryBatch`/`SensorReading` en `device_sync_routes.py`) — el Pi-hub
+encola y reenvía el payload casi tal cual, sin transformarlo.
+
+```json
+{
+  "lecturas": [
+    {
+      "zona_id": "uuid",
+      "timestamp": "2026-06-21T20:00:00+00:00",
+      "luz_ambiente": 35,
+      "movimiento": true,
+      "temperatura": 24.5,
+      "consumo_watts": 12.3,
+      "estado_luz": "encendida"
+    }
+  ]
+}
+```
+
+Todos los campos de cada lectura son opcionales excepto `zona_id` y
+`timestamp` — el ESP32 manda lo que tenga disponible según los sensores
+físicamente conectados a esa zona (no todas las zonas tienen PIR, no todos
+los Shelly reportan consumo, etc.).
+
+### `mihogar/<casa_id>/alerts` (NO retained)
+
+Publicado por el ESP32 cuando detecta una condición anómala localmente
+(sensor sin respuesta, error de comunicación con un dispositivo, etc.).
+**Shape idéntico** a `AlertsBatch`/`DeviceAlert` del backend.
+
+```json
+{
+  "alertas": [
+    {
+      "tipo": "sensor_offline",
+      "zona_id": "uuid",
+      "dispositivo_mac": "AA:BB:CC:DD:EE:FF",
+      "titulo": "Sensor sin respuesta",
+      "mensaje": "El módulo Shelly de Sala no responde desde hace 5 minutos",
+      "severidad": "warning"
+    }
+  ]
+}
+```
+
+`severidad` ∈ `{"info", "warning", "error", "success"}` (mismos valores que
+el backend). `zona_id` y `dispositivo_mac` son opcionales — depende de si
+la alerta se puede atribuir a una zona/dispositivo específico.
 
 ### `mihogar/<casa_id>/ack/<req_id>`
 
@@ -202,7 +244,7 @@ Para comandos de escena (`scene/all-on`, `scene/all-off`):
 
 **Idempotencia:** si el ESP32 recibe el mismo `req_id` dos veces (QoS 1 puede duplicar), debe responder el mismo ack y NO aplicar dos veces. Mantener un cache pequeño de últimos N `req_id` procesados es la forma estándar.
 
-**Ack tardío:** si el ESP32 publica un ack después de que la Pi ya hizo timeout (devolvió 504 al cliente HTTP), el listener MQTT de la Pi ve un `req_id` que ya no está en su tabla pendiente, loguea y lo descarta. No hay leak. El ESP32 NO necesita lógica especial para esto — siempre publica el ack cuando termina de aplicar.
+**Ack tardío:** si el ESP32 publica un ack después de que la Pi ya hizo timeout (devolvió 504 al cliente HTTP), el listener MQTT de la Pi ve un`req_id` que ya no está en su tabla pendiente, loguea y lo descarta. No hay leak. El ESP32 NO necesita lógica especial para esto — siempre publica el ack cuando termina de aplicar.
 
 ---
 
@@ -216,6 +258,7 @@ Para comandos de escena (`scene/all-on`, `scene/all-off`):
 | ESP32 desconectado / no responde | Pi (timeout) | — | 504 `{"detail": "ack timeout"}` |
 | JSON inválido en el comando | ESP32 | (no responde) → timeout | 504 (mismo path) |
 | Broker caído | Pi (al publicar) | — | 503 `{"detail": "MQTT broker no disponible"}` |
+| Telemetría/alerta con JSON inválido | Pi (al encolar) | (se descarta, sin reintentar al ESP32 — es streaming, no RPC) | n/a |
 
 ---
 
@@ -225,3 +268,4 @@ Para comandos de escena (`scene/all-on`, `scene/all-off`):
 - [ ] Decidir si `info.capabilities` se versiona o crece append-only.
 - [ ] Auth (username/password vs. token compartido por casa).
 - [ ] TLS sobre 8883 con CA local.
+- [ ] Validar `telemetry`/`alerts` end-to-end contra el ESP32-C5 físico real (definido e implementado 21/jun/2026, pendiente de prueba en hardware).

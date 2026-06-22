@@ -3,9 +3,12 @@ Cliente MQTT del Pi-hub.
 
 Responsabilidades:
   - Conectar al broker y mantener la conexión (reconnect con backoff).
-  - Suscribir a info, state, status y ack/<req_id>.
+  - Suscribir a info, state, status, telemetry, alerts y ack/<req_id>.
   - Mantener el LastKnownState a partir de los retained de info/state.
   - Encolar cada `state` nuevo en BridgeStore.state_queue (puente Pi→EC2).
+  - Encolar cada `telemetry`/`alerts` en sus FIFO correspondientes
+    (puente Pi→EC2) — agregado 21/jun/2026, ver
+    docs/topics-mqtt-pi-esp32.md sección 3.
   - Exponer publish_command(topic_suffix, body) que: genera req_id, publica
     en mihogar/<casa>/cmd/<topic_suffix>, espera el ack en
     mihogar/<casa>/ack/<req_id> con timeout, devuelve el payload del ack.
@@ -14,7 +17,7 @@ El cliente expone publish_command como interfaz pública para los handlers
 HTTP. Internamente mantiene un dict req_id → asyncio.Future que el listener
 resuelve cuando llega el ack correspondiente.
 
-Spec MQTT: docs/topics-mqtt-pi-esp32.md (BORRADOR).
+Spec MQTT: docs/topics-mqtt-pi-esp32.md.
 """
 import asyncio
 import json
@@ -103,6 +106,8 @@ class MqttClient:
                         await client.subscribe(f"{self._prefix}/info", qos=1)
                         await client.subscribe(f"{self._prefix}/state", qos=1)
                         await client.subscribe(f"{self._prefix}/status", qos=1)
+                        await client.subscribe(f"{self._prefix}/telemetry", qos=1)
+                        await client.subscribe(f"{self._prefix}/alerts", qos=1)
                         await client.subscribe(f"{self._prefix}/ack/+", qos=1)
                         logger.info("Pi-hub MQTT: suscripciones OK")
                         async for message in client.messages:
@@ -142,6 +147,16 @@ class MqttClient:
             online = bool(body.get("online", False))
             await self._state.set_esp32_online(online)
             logger.info("Pi-hub MQTT: ESP32 status online=%s", online)
+        elif topic == f"{self._prefix}/telemetry":
+            lecturas = body.get("lecturas", [])
+            for lectura in lecturas:
+                await self._bridge_store.enqueue_telemetry(lectura)
+            logger.debug("Pi-hub MQTT: telemetry encolada (%d lecturas)", len(lecturas))
+        elif topic == f"{self._prefix}/alerts":
+            alertas = body.get("alertas", [])
+            for alerta in alertas:
+                await self._bridge_store.enqueue_alert(alerta)
+            logger.info("Pi-hub MQTT: alerts encoladas (%d alertas)", len(alertas))
         elif topic.startswith(f"{self._prefix}/ack/"):
             req_id = topic.rsplit("/", 1)[-1]
             fut = self._pending.pop(req_id, None)

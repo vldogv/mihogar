@@ -1,12 +1,11 @@
 """
 Pi-hub — FastAPI app.
-Expone el contrato HTTP local (docs/contrato-api-local-esp32.md) y le habla
-al ESP32 por MQTT (docs/topics-mqtt-pi-esp32.md, BORRADOR).
 
 Lifespan:
   - startup: Settings, logging, LastKnownState, BridgeStore (SQLite),
     BackendClient (HTTP hacia EC2), MqttClient.start(), y los background
-    loops del puente Pi→EC2 (Fase 7 §7).
+    loops del puente Pi→EC2 (Fase 7 §7): ec2_health, config_poll,
+    heartbeat, state_drain, telemetry_drain, alerts_drain.
   - shutdown: cancela todos los loops, MqttClient.stop(), cierra
     BackendClient.
 """
@@ -21,11 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from .backend_client import BackendClient
 from .bridge_loop import (
     Ec2Health,
+    alerts_drain_loop,
     commands_poll_loop,
     config_poll_loop,
     ec2_health_loop,
     heartbeat_loop,
     state_drain_loop,
+    telemetry_drain_loop,
 )
 from .config import Settings
 from .db import BridgeStore
@@ -75,6 +76,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(config_poll_loop(bridge_store, backend_client, settings), name="config-poll"),
         asyncio.create_task(heartbeat_loop(backend_client, settings), name="heartbeat"),
         asyncio.create_task(state_drain_loop(bridge_store, backend_client, ec2_health, settings), name="state-drain"),
+        asyncio.create_task(telemetry_drain_loop(bridge_store, backend_client, ec2_health, settings), name="telemetry-drain"),
+        asyncio.create_task(alerts_drain_loop(bridge_store, backend_client, ec2_health, settings), name="alerts-drain"),
     ]
     if settings.COMMANDS_POLL_ENABLED:
         tasks.append(
@@ -101,9 +104,9 @@ app = FastAPI(
     description=(
         "Servicio local que corre en la Raspberry Pi. Expone el contrato "
         "PWA↔hub (HTTP), traduce a MQTT contra el ESP32, y sincroniza "
-        "estado hacia EC2 vía el puente SQLite (Fase 7 §7)."
+        "estado, telemetría y alertas hacia EC2 vía el puente SQLite (Fase 7 §7)."
     ),
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
