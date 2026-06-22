@@ -1,23 +1,25 @@
 """
 Background tasks del puente Pi → EC2 (Fase 7 §7).
 
-  - ec2_health_loop:    prueba GET /api/health cada EC2_HEALTH_CACHE_SECONDS.
-  - config_poll_loop:   descarga config de EC2 y la guarda en config_cache.
-  - heartbeat_loop:     manda heartbeat a EC2.
-  - state_drain_loop:   vacía el snapshot pendiente de state_queue hacia
-                         POST /api/device/sync/state.
-  - commands_poll_loop: DECISIÓN CERRADA DE EQUIPO (confirmada por Aldo,
-                         21/jun/2026): se queda desactivado permanentemente,
-                         no "pendiente de confirmar". GET /api/device/sync/
-                         commands es un stub que siempre regresa [] y se
-                         queda así a propósito — el canal de comandos
-                         inmediatos del proyecto es MQTT (PWA → pi-hub →
-                         MQTT → ESP32, ya implementado y probado
-                         end-to-end). /api/device/sync/* es solo
-                         sincronización diferida (telemetría/estado/config
-                         vía polling de /config). Este loop y su mapeo de
-                         comandos se dejan en el código como referencia,
-                         pero no hay plan de activarlos.
+  - ec2_health_loop:      prueba GET /api/health cada EC2_HEALTH_CACHE_SECONDS.
+  - config_poll_loop:     descarga config de EC2 y la guarda en config_cache.
+  - heartbeat_loop:       manda heartbeat a EC2.
+  - state_drain_loop:     vacía el snapshot pendiente de state_queue hacia
+                           POST /api/device/sync/state.
+  - telemetry_drain_loop: vacía telemetry_queue hacia
+                           POST /api/device/sync/telemetry, en batches.
+                           Agregado 21/jun/2026 — requiere que el ESP32-C5
+                           empiece a publicar en mihogar/<casa>/telemetry.
+  - alerts_drain_loop:    vacía alerts_queue hacia
+                           POST /api/device/sync/alerts, de a una alerta.
+                           Agregado 21/jun/2026 — requiere que el ESP32-C5
+                           empiece a publicar en mihogar/<casa>/alerts.
+  - commands_poll_loop:   DECISIÓN CERRADA DE EQUIPO (confirmada por Aldo,
+                           21/jun/2026): se queda desactivado permanentemente.
+                           GET /api/device/sync/commands es un stub que
+                           siempre regresa []. El canal de comandos inmediatos
+                           es MQTT, ya implementado y probado end-to-end.
+                           /api/device/sync/* es solo sincronización diferida.
 """
 import asyncio
 import logging
@@ -28,6 +30,8 @@ from .db import BridgeStore
 from .mqtt_client import AckTimeout, BrokerUnavailable, MqttClient
 
 logger = logging.getLogger(__name__)
+
+_TELEMETRY_BATCH_SIZE = 50  # máximo de lecturas por POST /telemetry
 
 
 class Ec2Health:
@@ -130,10 +134,88 @@ async def state_drain_loop(
         raise
 
 
-# Mapeo confirmado contra PendingCommand.comando en device_sync_routes.py.
-# Se deja como referencia histórica — ver docstring del módulo: este loop
-# no se activa, decisión cerrada de equipo.
-# "actualizar_config" no mapea a un comando MQTT de zona — no se incluye.
+async def telemetry_drain_loop(
+    store: BridgeStore, client: BackendClient, health: Ec2Health, settings: Settings,
+) -> None:
+    """Vacía telemetry_queue hacia POST /api/device/sync/telemetry.
+
+    Procesa en batches de hasta _TELEMETRY_BATCH_SIZE lecturas por ciclo
+    para no mandar payloads enormes en una sola llamada. Si EC2 no está
+    alcanzable, deja la cola intacta para el siguiente ciclo.
+    """
+    logger.info(
+        "telemetry_drain_loop iniciado (intervalo=%ds)", settings.DRAIN_INTERVAL_SECONDS,
+    )
+    try:
+        while True:
+            await asyncio.sleep(settings.DRAIN_INTERVAL_SECONDS)
+            if not await health.is_reachable():
+                logger.debug("telemetry_drain: EC2 no alcanzable, se mantiene en cola")
+                continue
+            batch = []
+            row_ids = []
+            for _ in range(_TELEMETRY_BATCH_SIZE):
+                row = await store.peek_fifo("telemetry_queue")
+                if row is None:
+                    break
+                row_id, lectura, _ = row
+                batch.append(lectura)
+                row_ids.append(row_id)
+                await store.delete_fifo("telemetry_queue", row_id)
+            if not batch:
+                continue
+            ok = await client.post_telemetry(batch)
+            if ok:
+                logger.info("telemetry_drain: %d lecturas enviadas", len(batch))
+            else:
+                logger.warning(
+                    "telemetry_drain: envío de %d lecturas falló — ya se eliminaron de la cola "
+                    "(telemetría es best-effort, no se reencola)", len(batch),
+                )
+    except asyncio.CancelledError:
+        logger.info("telemetry_drain_loop cancelado limpiamente")
+        raise
+
+
+async def alerts_drain_loop(
+    store: BridgeStore, client: BackendClient, health: Ec2Health, settings: Settings,
+) -> None:
+    """Vacía alerts_queue hacia POST /api/device/sync/alerts.
+
+    Las alertas se envían de a una (no en batch) para que un fallo en
+    una no bloquee el resto. A diferencia de la telemetría, las alertas
+    sí se reintentan: si el envío falla, la fila se deja en la cola para
+    el siguiente ciclo (no se borra).
+    """
+    logger.info(
+        "alerts_drain_loop iniciado (intervalo=%ds)", settings.DRAIN_INTERVAL_SECONDS,
+    )
+    try:
+        while True:
+            await asyncio.sleep(settings.DRAIN_INTERVAL_SECONDS)
+            if not await health.is_reachable():
+                logger.debug("alerts_drain: EC2 no alcanzable, se mantiene en cola")
+                continue
+            while True:
+                row = await store.peek_fifo("alerts_queue")
+                if row is None:
+                    break
+                row_id, alerta, attempts = row
+                ok = await client.post_alerts([alerta])
+                if ok:
+                    await store.delete_fifo("alerts_queue", row_id)
+                    logger.info("alerts_drain: alerta tipo=%s enviada", alerta.get("tipo"))
+                else:
+                    logger.warning(
+                        "alerts_drain: alerta tipo=%s falló (intento #%d), se reintenta",
+                        alerta.get("tipo"), attempts,
+                    )
+                    break
+    except asyncio.CancelledError:
+        logger.info("alerts_drain_loop cancelado limpiamente")
+        raise
+
+
 _COMMAND_TOPIC_MAP = {
     "encender": lambda c: (f"zones/{c['zona_id']}/toggle", {"encendida": True}),
     "apagar": lambda c: (f"zones/{c['zona_id']}/toggle", {"encendida": False}),
@@ -150,8 +232,8 @@ async def commands_poll_loop(
 
     Decisión cerrada de equipo (Aldo, 21/jun/2026): el canal de comandos
     inmediatos es MQTT, ya implementado y probado. Este loop existe solo
-    como código de referencia por si algún día se reconsidera; no hay
-    plan de activarlo (COMMANDS_POLL_ENABLED se queda en false).
+    como código de referencia; no hay plan de activarlo
+    (COMMANDS_POLL_ENABLED se queda en false permanentemente).
     """
     logger.info(
         "commands_poll_loop iniciado (intervalo=%ds) — NOTA: este camino fue descartado, ver docstring del módulo",
