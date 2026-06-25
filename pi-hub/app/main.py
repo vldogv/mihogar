@@ -35,6 +35,7 @@ from .routes import health as health_routes
 from .routes import scenes as scenes_routes
 from .routes import state as state_routes
 from .routes import zones as zones_routes
+from .routes import sensors as sensors_routes
 from .state import LastKnownState
 
 
@@ -122,3 +123,4 @@ app.include_router(health_routes.router)
 app.include_router(state_routes.router)
 app.include_router(zones_routes.router)
 app.include_router(scenes_routes.router)
+app.include_router(sensors_routes.router)
